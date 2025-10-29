@@ -49,9 +49,9 @@ const schema = {
 
 export const extractMedicationInfoFromImage = async (imageFile: File): Promise<ParsedMedication[]> => {
   try {
-    const API_KEY = process.env.API_KEY;
+    const API_KEY = process.env.VITE_GEMINI_API_KEY;
     if (!API_KEY) {
-      throw new Error("API Key is not configured. Please ensure the API_KEY environment variable is set.");
+      throw new Error("API Key is not configured. Please ensure the VITE_GEMINI_API_KEY environment variable is set.");
     }
     const ai = new GoogleGenAI({ apiKey: API_KEY });
 

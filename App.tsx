@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Medication, AppState, ParsedMedication, Reminder, HistoryEntry } from './types';
 import { extractMedicationInfoFromImage } from './services/geminiService';
@@ -61,95 +62,130 @@ const App: React.FC = () => {
   const [selectedMedicationIds, setSelectedMedicationIds] = useState<string[]>([]);
   const [medsForReview, setMedsForReview] = useState<ParsedMedication[] | null>(null);
   const reminderTimeouts = useRef<Record<string, number>>({});
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaveable, setIsSaveable] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Start with loading true
+  const [userId, setUserId] = useState<string | null>(null);
+  const isInitialDataLoaded = useRef(false);
 
-  // Load data from API on initial render
+  // 1. Get or create a unique user ID on component mount.
   useEffect(() => {
-    const loadData = async () => {
-        try {
-            const res = await fetch("/api/load?userId=kien");
-            if (!res.ok) {
-                let serverError = 'Failed to load data from server.';
-                try {
-                    const errorJson = await res.json();
-                    serverError = errorJson.error || errorJson.details || serverError;
-                } catch (e) { /* Response might not be JSON, ignore */ }
-                throw new Error(serverError);
-            }
-            const result = await res.json();
-            
-            if (result.data && typeof result.data === 'string') {
-                const parsedData = JSON.parse(result.data);
-                if (parsedData.medications) {
-                    setMedications(parsedData.medications);
-                }
-                if (parsedData.history) {
-                    const parsedHistory = parsedData.history.map((h: any) => ({ ...h, takenAt: new Date(h.takenAt) }));
-                    setHistory(parsedHistory);
-                }
-            }
-            // If result.data is null or loading is successful, enable saving.
-            setIsSaveable(true);
-        } catch (err: any) {
-            console.error("Failed to load state from API:", err);
-            setError(`Could not load your saved data: ${err.message}`);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-    
-    loadData();
+    let id = localStorage.getItem('medication-tracker-userId');
+    if (!id) {
+      id = `user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      localStorage.setItem('medication-tracker-userId', id);
+    }
+    setUserId(id);
 
     if ('Notification' in window) {
       setNotificationPermission(Notification.permission);
     }
   }, []);
 
-  // Save state to API whenever medications or history change
+  // 2. Load data from the server once we have a userId.
   useEffect(() => {
-    // Don't save until the initial data has been loaded successfully or user has added data.
-    if (!isSaveable) {
-        return;
+    if (!userId) return;
+
+    const loadData = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`/api/load?userId=${userId}`);
+        if (!response.ok) {
+          let errorMsg = 'Failed to load data from server.';
+          const responseText = await response.text();
+          try {
+            const errorBody = JSON.parse(responseText);
+            // Use the specific error from the serverless function
+            errorMsg = `Failed to load data: ${errorBody.error || response.statusText}`;
+            if (errorBody.details) {
+              console.error("Server error details:", errorBody.details);
+            }
+          } catch (e) {
+            // The response body wasn't JSON. This is unexpected but we should handle it.
+            console.error("Could not parse error response from server. Body:", responseText);
+            errorMsg = 'Failed to load data. The server returned an unexpected response.';
+          }
+          throw new Error(errorMsg);
+        }
+        const result = await response.json();
+        
+        if (result.data) {
+          const parsedData = JSON.parse(result.data);
+          if (parsedData.medications) {
+            setMedications(parsedData.medications);
+          }
+          if (parsedData.history) {
+            const parsedHistory = parsedData.history.map((h: any) => ({ ...h, takenAt: new Date(h.takenAt) }));
+            setHistory(parsedHistory);
+          }
+        }
+        // Only mark data as loaded on success to prevent overwriting saved data on load failure.
+        isInitialDataLoaded.current = true;
+      } catch (err: any) {
+        console.error("Failed to load state from API:", err);
+        // Display the more specific error message to the user
+        setError(err.message || 'Failed to load your saved data. Please try again later.');
+        setStatus(AppState.Error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, [userId]);
+
+  // 3. Save state to the server whenever medications or history change.
+  useEffect(() => {
+    if (!isInitialDataLoaded.current || !userId) {
+      return;
     }
 
-    const saveData = async () => {
-        try {
-            const dataToSave = {
-                medications,
-                history,
-            };
-            const res = await fetch("/api/save", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                userId: "kien",
-                data: JSON.stringify(dataToSave)
-              })
-            });
-             if (!res.ok) {
-                let serverError = 'Failed to save data to server.';
-                try {
-                    const errorJson = await res.json();
-                    serverError = errorJson.error || errorJson.details || serverError;
-                } catch (e) { /* Response might not be JSON, ignore */ }
-                throw new Error(serverError);
-            }
-        } catch (err: any) {
-            console.error("Failed to save state to API:", err);
-            setError(`Could not save your changes: ${err.message}`);
-        }
-    };
-
-    // Debounce save to avoid excessive API calls
     const handler = setTimeout(() => {
+        const saveData = async () => {
+          try {
+            const dataToSave = { medications, history };
+            const response = await fetch('/api/save', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                userId,
+                data: JSON.stringify(dataToSave)
+              }),
+            });
+
+            if (!response.ok) {
+              let errorMsg = 'Failed to save data to server.';
+              const responseText = await response.text();
+              try {
+                  const errorBody = JSON.parse(responseText);
+                  errorMsg = `Could not save your changes: ${errorBody.error || response.statusText}`;
+                   if (errorBody.details) {
+                      console.error("Server error details on save:", errorBody.details);
+                  }
+              } catch (e) {
+                  console.error("Could not parse save error response. Body:", responseText);
+                  errorMsg = 'Could not save your changes. The server returned an unexpected response.';
+              }
+              throw new Error(errorMsg);
+            }
+            
+            if (error?.includes('Could not save your changes')) {
+                setError(null);
+            }
+          } catch (err: any) {
+            console.error("Failed to save state to API:", err);
+            setError(err.message || 'Could not save your changes.');
+          }
+        };
         saveData();
-    }, 500);
+    }, 500); // Debounce save requests
 
     return () => {
-        clearTimeout(handler);
+      clearTimeout(handler);
     };
-  }, [medications, history, isSaveable]);
+  }, [medications, history, userId, error]);
+
 
   const requestNotificationPermission = useCallback(async () => {
     if (!('Notification' in window)) {
@@ -228,7 +264,6 @@ const App: React.FC = () => {
     setMedications(prevMeds => [...prevMeds, ...newMedications]);
     setMedsForReview(null);
     setStatus(AppState.Success);
-    setIsSaveable(true);
   }, []);
 
   const handleCancelReview = useCallback(() => {
@@ -279,7 +314,6 @@ const App: React.FC = () => {
     setMedications(prevMeds => [...prevMeds, newMedication]);
     setIsAddingManually(false);
     setStatus(AppState.Success);
-    setIsSaveable(true);
   }, []);
 
   const handleSelectMedication = useCallback((id: string) => {
@@ -504,7 +538,7 @@ const App: React.FC = () => {
               })}
             </div>
           </div>
-        ) : !isAddingManually && (
+        ) : !isAddingManually && !isAddingManually && status !== AppState.Loading && (
             <div className="text-center py-12 px-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
                 <PillIcon className="mx-auto h-12 w-12 text-gray-400" />
                 <h3 className="mt-2 text-lg font-medium text-gray-900 dark:text-white">No medications listed</h3>
