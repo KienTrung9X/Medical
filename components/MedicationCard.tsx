@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Medication, Reminder } from '../types';
-import { PillIcon, ClockIcon, CheckCircleIcon, BellIcon, BellIconSolid } from './icons';
+import { PillIcon, ClockIcon, CheckCircleIcon, BellIcon, BellIconSolid, TrashIcon, PlusCircleIcon } from './icons';
 
 interface MedicationCardProps {
   medication: Medication;
@@ -15,9 +15,9 @@ const WEEK_DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const formatReminderText = (reminder: Reminder | null): string => {
-    if (!reminder) return 'No reminder set';
+    if (!reminder || !reminder.times || reminder.times.length === 0) return 'No reminder set';
 
-    const timeString = reminder.time; // Assuming HH:mm format
+    const timeString = reminder.times.sort().join(', ');
     
     if (reminder.frequency === 'daily') {
         return `Daily at ${timeString}`;
@@ -46,21 +46,20 @@ const MedicationCard: React.FC<MedicationCardProps> = ({
   const [isEditingReminder, setIsEditingReminder] = useState(false);
   
   const [reminderFormState, setReminderFormState] = useState<Reminder>(
-    medication.reminder || { time: '09:00', frequency: 'daily', days: [] }
+    medication.reminder || { times: ['09:00'], frequency: 'daily', days: [] }
   );
 
   const handleEditClick = () => {
-    setReminderFormState(medication.reminder || { time: '09:00', frequency: 'daily', days: [] });
+    setReminderFormState(medication.reminder || { times: ['09:00'], frequency: 'daily', days: [] });
     setIsEditingReminder(true);
   };
 
   const handleSaveReminder = () => {
-    const finalReminder = { ...reminderFormState };
-    if (finalReminder.frequency === 'specific_days' && (!finalReminder.days || finalReminder.days.length === 0)) {
-        // If no days are selected, treat it as no reminder
+    const finalTimes = reminderFormState.times.filter(t => t.trim() !== '');
+    if (finalTimes.length === 0 || (reminderFormState.frequency === 'specific_days' && (!reminderFormState.days || reminderFormState.days.length === 0))) {
         onSetReminder(medication.id, null);
     } else {
-        onSetReminder(medication.id, finalReminder);
+        onSetReminder(medication.id, { ...reminderFormState, times: finalTimes });
     }
     setIsEditingReminder(false);
   };
@@ -82,6 +81,24 @@ const MedicationCard: React.FC<MedicationCardProps> = ({
             : [...currentDays, dayIndex];
         return { ...prevState, days: newDays };
     });
+  };
+
+  const handleTimeChange = (index: number, value: string) => {
+    setReminderFormState(s => {
+        const newTimes = [...s.times];
+        newTimes[index] = value;
+        return { ...s, times: newTimes };
+    });
+  };
+
+  const handleAddTime = () => {
+      setReminderFormState(s => ({ ...s, times: [...s.times, ''] }));
+  };
+
+  const handleRemoveTime = (index: number) => {
+      if (reminderFormState.times.length > 1) {
+          setReminderFormState(s => ({ ...s, times: s.times.filter((_, i) => i !== index) }));
+      }
   };
 
   const reminderButtonDisabled = notificationPermission !== 'granted';
@@ -143,15 +160,38 @@ const MedicationCard: React.FC<MedicationCardProps> = ({
         <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             {isEditingReminder ? (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Time</label>
-                      <input 
-                          type="time" 
-                          value={reminderFormState.time}
-                          onChange={(e) => setReminderFormState(s => ({...s, time: e.target.value}))}
-                          className="mt-1 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md p-2 text-sm w-full focus:ring-blue-500 focus:border-blue-500"
-                      />
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Times</label>
+                        <div className="space-y-2">
+                          {reminderFormState.times.map((time, index) => (
+                              <div key={index} className="flex items-center gap-2">
+                                  <input 
+                                      type="time" 
+                                      value={time}
+                                      onChange={(e) => handleTimeChange(index, e.target.value)}
+                                      className="bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md p-2 text-sm w-full focus:ring-blue-500 focus:border-blue-500"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveTime(index)}
+                                    disabled={reminderFormState.times.length <= 1}
+                                    className="p-2 text-gray-400 hover:text-red-500 rounded-full hover:bg-red-100 dark:hover:bg-red-900/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                                    aria-label="Remove time"
+                                  >
+                                      <TrashIcon className="w-5 h-5"/>
+                                  </button>
+                              </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={handleAddTime}
+                            className="flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-800"
+                          >
+                            <PlusCircleIcon className="w-5 h-5"/>
+                            Add time
+                          </button>
+                        </div>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Frequency</label>

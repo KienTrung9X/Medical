@@ -71,11 +71,40 @@ export const extractMedicationInfoFromImage = async (imageFile: File): Promise<P
     });
 
     const jsonText = response.text.trim();
-    const parsedData: ParsedMedication[] = JSON.parse(jsonText);
+    
+    if (!jsonText) {
+        throw new Error("The model returned an empty response. Please try a clearer image.");
+    }
+    
+    let parsedData: ParsedMedication[];
+    try {
+        parsedData = JSON.parse(jsonText);
+    } catch (parseError) {
+        console.error("Failed to parse JSON from model:", jsonText);
+        throw new Error("The AI model returned an unexpected format. Please try again.");
+    }
+
+    if (!Array.isArray(parsedData)) {
+        console.error("Parsed data is not an array:", parsedData);
+        throw new Error("The AI model's response was not in the expected array format.");
+    }
+
     return parsedData;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error extracting medication info:", error);
-    throw new Error("Failed to analyze the prescription. Please ensure the image is clear and try again.");
+    
+    // Re-throw a more user-friendly error message, preserving specific messages from our checks
+    if (error.message.includes("The model returned an empty response") ||
+        error.message.includes("The AI model returned an unexpected format") ||
+        error.message.includes("The AI model's response was not in the expected array format")) {
+        throw error;
+    }
+
+    if (error.toString().includes('API key')) {
+         throw new Error("API Key is invalid or missing. Please check your configuration.");
+    }
+
+    throw new Error("Failed to analyze the prescription. The image might be unclear, or there could be an issue with the AI service.");
   }
 };

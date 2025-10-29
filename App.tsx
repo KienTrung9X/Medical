@@ -1,58 +1,106 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Medication, AppState, ParsedMedication, Reminder } from './types';
+import { Medication, AppState, ParsedMedication, Reminder, HistoryEntry } from './types';
 import { extractMedicationInfoFromImage } from './services/geminiService';
 import FileUpload from './components/FileUpload';
 import MedicationCard from './components/MedicationCard';
 import ManualAddForm from './components/ManualAddForm';
 import BulkActionBar from './components/BulkActionBar';
 import ProgressBar from './components/ProgressBar';
-import { PillIcon, BellIcon, PlusCircleIcon } from './components/icons';
+import HistoryModal from './components/HistoryModal';
+import ReviewModal from './components/ReviewModal';
+import ProgressModal from './components/ProgressModal';
+import { PillIcon, BellIcon, PlusCircleIcon, HistoryIcon, ChartBarIcon } from './components/icons';
 
 const calculateNextReminderDate = (reminder: Reminder, now: Date): Date | null => {
-    const [hours, minutes] = reminder.time.split(':').map(Number);
-    
-    if (reminder.frequency === 'daily') {
-        let reminderDate = new Date(now);
-        reminderDate.setHours(hours, minutes, 0, 0);
-        if (reminderDate <= now) {
-            reminderDate.setDate(reminderDate.getDate() + 1);
-        }
-        return reminderDate;
+    if (!reminder.times || reminder.times.length === 0) {
+        return null;
     }
 
-    if (reminder.frequency === 'specific_days' && reminder.days && reminder.days.length > 0) {
-        for (let i = 0; i < 7; i++) {
-            const checkDate = new Date(now);
-            checkDate.setDate(now.getDate() + i);
-            const dayOfWeek = checkDate.getDay();
+    const potentialDates: Date[] = [];
 
-            if (reminder.days.includes(dayOfWeek)) {
+    // Check for the next 7 days to cover all specific day possibilities and edge cases
+    for (let i = 0; i < 7; i++) {
+        const checkDate = new Date(now);
+        checkDate.setDate(now.getDate() + i);
+        const dayOfWeek = checkDate.getDay();
+
+        const isDayValid = reminder.frequency === 'daily' || 
+                           (reminder.frequency === 'specific_days' && reminder.days?.includes(dayOfWeek));
+
+        if (isDayValid) {
+            reminder.times.forEach(time => {
+                const [hours, minutes] = time.split(':').map(Number);
                 const potentialReminderDate = new Date(checkDate);
                 potentialReminderDate.setHours(hours, minutes, 0, 0);
+
                 if (potentialReminderDate > now) {
-                    return potentialReminderDate;
+                    potentialDates.push(potentialReminderDate);
                 }
-            }
+            });
         }
     }
     
-    return null; // Should not happen if days are selected, but a safe fallback
+    if (potentialDates.length === 0) {
+        return null; // No upcoming reminders found
+    }
+
+    // Find the soonest date from all potential future dates
+    return new Date(Math.min(...potentialDates.map(d => d.getTime())));
 };
+
 
 const App: React.FC = () => {
   const [medications, setMedications] = useState<Medication[]>([]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [status, setStatus] = useState<AppState>(AppState.Idle);
   const [error, setError] = useState<string | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>('default');
   const [isAddingManually, setIsAddingManually] = useState(false);
+  const [isHistoryVisible, setIsHistoryVisible] = useState(false);
+  const [isProgressVisible, setIsProgressVisible] = useState(false);
   const [selectedMedicationIds, setSelectedMedicationIds] = useState<string[]>([]);
+  const [medsForReview, setMedsForReview] = useState<ParsedMedication[] | null>(null);
   const reminderTimeouts = useRef<Record<string, number>>({});
 
+  // Load state from localStorage on initial render
   useEffect(() => {
+    try {
+        const storedMeds = localStorage.getItem('medications');
+        if (storedMeds) {
+            setMedications(JSON.parse(storedMeds));
+        }
+        const storedHistory = localStorage.getItem('medicationHistory');
+        if (storedHistory) {
+            // Dates are stored as strings, so we need to convert them back
+            const parsedHistory = JSON.parse(storedHistory).map((h: any) => ({ ...h, takenAt: new Date(h.takenAt) }));
+            setHistory(parsedHistory);
+        }
+    } catch (error) {
+        console.error("Failed to load state from localStorage", error);
+    }
+    
     if ('Notification' in window) {
       setNotificationPermission(Notification.permission);
     }
   }, []);
+
+  // Save medications to localStorage whenever they change
+  useEffect(() => {
+    try {
+        localStorage.setItem('medications', JSON.stringify(medications));
+    } catch (error) {
+        console.error("Failed to save medications to localStorage", error);
+    }
+  }, [medications]);
+  
+  // Save history to localStorage whenever it changes
+  useEffect(() => {
+    try {
+        localStorage.setItem('medicationHistory', JSON.stringify(history));
+    } catch (error) {
+        console.error("Failed to save history to localStorage", error);
+    }
+  }, [history]);
 
   const requestNotificationPermission = useCallback(async () => {
     if (!('Notification' in window)) {
@@ -105,28 +153,62 @@ const App: React.FC = () => {
     setStatus(AppState.Loading);
     setError(null);
     setIsAddingManually(false);
+    setMedsForReview(null);
     try {
       const extractedData: ParsedMedication[] = await extractMedicationInfoFromImage(file);
-      const newMedications: Medication[] = extractedData.map((med, index) => ({
-        ...med,
-        id: `${Date.now()}-${index}`,
-        taken: false,
-        reminder: null,
-      }));
-      setMedications(newMedications);
-      setStatus(AppState.Success);
+      if (extractedData.length > 0) {
+        setMedsForReview(extractedData);
+      } else {
+        setError("Could not find any medication information in the file. Please try a clearer image or add the medication manually.");
+        setStatus(AppState.Error);
+      }
+      setStatus(AppState.Idle);
     } catch (err: any) {
       setError(err.message || 'An unknown error occurred.');
       setStatus(AppState.Error);
     }
   }, []);
 
+  const handleSaveReviewedMedications = useCallback((reviewedMeds: ParsedMedication[]) => {
+    const newMedications: Medication[] = reviewedMeds.map((med, index) => ({
+      ...med,
+      id: `${Date.now()}-${index}`,
+      taken: false,
+      reminder: null,
+    }));
+    setMedications(prevMeds => [...prevMeds, ...newMedications]);
+    setMedsForReview(null);
+    setStatus(AppState.Success);
+  }, []);
+
+  const handleCancelReview = useCallback(() => {
+    setMedsForReview(null);
+    setStatus(AppState.Idle);
+  }, []);
+
   const handleToggleTaken = useCallback((id: string) => {
-    setMedications(prevMeds =>
-      prevMeds.map(med =>
-        med.id === id ? { ...med, taken: !med.taken } : med
-      )
-    );
+    setMedications(prevMeds => {
+      const medToUpdate = prevMeds.find(m => m.id === id);
+      if (!medToUpdate) return prevMeds;
+
+      if (!medToUpdate.taken) { // from not taken to taken
+        const historyEntry: HistoryEntry = {
+          id: `${Date.now()}-${medToUpdate.id}`,
+          medicationId: medToUpdate.id,
+          medicationName: medToUpdate.name,
+          takenAt: new Date(),
+        };
+        setHistory(prevHistory => [...prevHistory, historyEntry]);
+      } else { // from taken to not taken (undo)
+        setHistory(prevHistory => {
+          const entriesForMed = prevHistory.filter(h => h.medicationId === id);
+          if (entriesForMed.length === 0) return prevHistory;
+          const latestEntry = entriesForMed.reduce((a, b) => new Date(a.takenAt) > new Date(b.takenAt) ? a : b);
+          return prevHistory.filter(h => h.id !== latestEntry.id);
+        });
+      }
+      return prevMeds.map(med => med.id === id ? { ...med, taken: !med.taken } : med);
+    });
   }, []);
 
   const handleSetReminder = useCallback((id: string, reminder: Reminder | null) => {
@@ -168,19 +250,43 @@ const App: React.FC = () => {
   const handleBulkDelete = useCallback(() => {
     if (window.confirm(`Are you sure you want to delete ${selectedMedicationIds.length} medication(s)?`)) {
       setMedications(prevMeds => prevMeds.filter(med => !selectedMedicationIds.includes(med.id)));
+      setHistory(prevHistory => prevHistory.filter(h => !selectedMedicationIds.includes(h.medicationId)));
       setSelectedMedicationIds([]);
     }
   }, [selectedMedicationIds]);
 
   const handleBulkMarkAsTaken = useCallback(() => {
-    setMedications(prevMeds =>
-      prevMeds.map(med =>
-        selectedMedicationIds.includes(med.id) ? { ...med, taken: true } : med
-      )
-    );
+    const now = new Date();
+    setMedications(prevMeds => {
+      const newHistoryEntries: HistoryEntry[] = [];
+      const updatedMeds = prevMeds.map(med => {
+        if (selectedMedicationIds.includes(med.id)) {
+          if (!med.taken) { // Only add to history if it wasn't already taken
+            newHistoryEntries.push({
+              id: `${Date.now()}-${med.id}`,
+              medicationId: med.id,
+              medicationName: med.name,
+              takenAt: now,
+            });
+          }
+          return { ...med, taken: true };
+        }
+        return med;
+      });
+      if(newHistoryEntries.length > 0) {
+        setHistory(prevHistory => [...prevHistory, ...newHistoryEntries]);
+      }
+      return updatedMeds;
+    });
+
     setSelectedMedicationIds([]);
   }, [selectedMedicationIds]);
-
+  
+  const handleClearHistory = useCallback(() => {
+      if (window.confirm('Are you sure you want to clear all medication history? This action cannot be undone.')) {
+        setHistory([]);
+      }
+  }, []);
 
   const progress = medications.length > 0
     ? (medications.filter(m => m.taken).length / medications.length) * 100
@@ -273,8 +379,30 @@ const App: React.FC = () => {
 
         {status !== AppState.Loading && medications.length > 0 && (
           <div>
+            <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold">Today's Regimen</h2>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setIsProgressVisible(true)}
+                    className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-gray-600 bg-gray-100 dark:bg-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    aria-label="View adherence progress"
+                    >
+                    <ChartBarIcon className="w-5 h-5" />
+                    <span>Progress</span>
+                  </button>
+                  <button
+                    onClick={() => setIsHistoryVisible(true)}
+                    className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-gray-600 bg-gray-100 dark:bg-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    aria-label="View medication history"
+                    >
+                    <HistoryIcon className="w-5 h-5" />
+                    <span>History</span>
+                  </button>
+                </div>
+            </div>
             <div className="mb-6">
-              <h2 className="text-2xl font-bold mb-2">Today's Regimen</h2>
               <ProgressBar progress={progress} />
             </div>
 
@@ -335,6 +463,30 @@ const App: React.FC = () => {
           onDeselectAll={() => setSelectedMedicationIds([])}
           onDelete={handleBulkDelete}
           onMarkTaken={handleBulkMarkAsTaken}
+        />
+      )}
+      
+      {isHistoryVisible && (
+        <HistoryModal 
+            history={history} 
+            onClose={() => setIsHistoryVisible(false)}
+            onClearHistory={handleClearHistory}
+        />
+      )}
+
+      {isProgressVisible && (
+        <ProgressModal
+          medications={medications}
+          history={history}
+          onClose={() => setIsProgressVisible(false)}
+        />
+      )}
+      
+      {medsForReview && (
+        <ReviewModal
+          extractedMeds={medsForReview}
+          onSave={handleSaveReviewedMedications}
+          onCancel={handleCancelReview}
         />
       )}
     </div>
