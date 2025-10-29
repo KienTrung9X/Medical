@@ -1,0 +1,5 @@
+{
+  "name": "Medication Reminder OCR",
+  "description": "A web-based medication reminder application that uses OCR to help users track their prescription medications with scheduling and progress monitoring functionality.",
+  "requestFramePermissions": []
+}
