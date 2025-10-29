@@ -243,11 +243,11 @@ const App: React.FC = () => {
       const extractedData: ParsedMedication[] = await extractMedicationInfoFromImage(file);
       if (extractedData.length > 0) {
         setMedsForReview(extractedData);
+        setStatus(AppState.Idle);
       } else {
-        setError("Could not find any medication information in the file. Please try a clearer image or add the medication manually.");
+        setError("No medication information was found in the file. Please try using a clearer image or add the medication manually.");
         setStatus(AppState.Error);
       }
-      setStatus(AppState.Idle);
     } catch (err: any) {
       setError(err.message || 'An unknown error occurred.');
       setStatus(AppState.Error);
