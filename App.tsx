@@ -61,46 +61,93 @@ const App: React.FC = () => {
   const [selectedMedicationIds, setSelectedMedicationIds] = useState<string[]>([]);
   const [medsForReview, setMedsForReview] = useState<ParsedMedication[] | null>(null);
   const reminderTimeouts = useRef<Record<string, number>>({});
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
 
-  // Load state from localStorage on initial render
+  // Load data from API on initial render
   useEffect(() => {
-    try {
-        const storedMeds = localStorage.getItem('medications');
-        if (storedMeds) {
-            setMedications(JSON.parse(storedMeds));
+    const loadData = async () => {
+        try {
+            const res = await fetch("/api/load?userId=kien");
+            if (!res.ok) {
+                let serverError = 'Failed to load data from server.';
+                try {
+                    const errorJson = await res.json();
+                    serverError = errorJson.error || errorJson.details || serverError;
+                } catch (e) { /* Response might not be JSON, ignore */ }
+                throw new Error(serverError);
+            }
+            const result = await res.json();
+            
+            if (result.data && typeof result.data === 'string') {
+                const parsedData = JSON.parse(result.data);
+                if (parsedData.medications) {
+                    setMedications(parsedData.medications);
+                }
+                if (parsedData.history) {
+                    const parsedHistory = parsedData.history.map((h: any) => ({ ...h, takenAt: new Date(h.takenAt) }));
+                    setHistory(parsedHistory);
+                }
+            }
+            // If result.data is null, it's the first visit. No error needed.
+        } catch (err: any) {
+            console.error("Failed to load state from API:", err);
+            setError(`Could not load your saved data: ${err.message}`);
+        } finally {
+            setIsDataLoaded(true);
         }
-        const storedHistory = localStorage.getItem('medicationHistory');
-        if (storedHistory) {
-            // Dates are stored as strings, so we need to convert them back
-            const parsedHistory = JSON.parse(storedHistory).map((h: any) => ({ ...h, takenAt: new Date(h.takenAt) }));
-            setHistory(parsedHistory);
-        }
-    } catch (error) {
-        console.error("Failed to load state from localStorage", error);
-    }
+    };
     
+    loadData();
+
     if ('Notification' in window) {
       setNotificationPermission(Notification.permission);
     }
   }, []);
 
-  // Save medications to localStorage whenever they change
+  // Save state to API whenever medications or history change
   useEffect(() => {
-    try {
-        localStorage.setItem('medications', JSON.stringify(medications));
-    } catch (error) {
-        console.error("Failed to save medications to localStorage", error);
+    // Don't save until the initial data load is complete.
+    if (!isDataLoaded) {
+        return;
     }
-  }, [medications]);
-  
-  // Save history to localStorage whenever it changes
-  useEffect(() => {
-    try {
-        localStorage.setItem('medicationHistory', JSON.stringify(history));
-    } catch (error) {
-        console.error("Failed to save history to localStorage", error);
-    }
-  }, [history]);
+
+    const saveData = async () => {
+        try {
+            const dataToSave = {
+                medications,
+                history,
+            };
+            const res = await fetch("/api/save", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId: "kien",
+                data: JSON.stringify(dataToSave)
+              })
+            });
+             if (!res.ok) {
+                let serverError = 'Failed to save data to server.';
+                try {
+                    const errorJson = await res.json();
+                    serverError = errorJson.error || errorJson.details || serverError;
+                } catch (e) { /* Response might not be JSON, ignore */ }
+                throw new Error(serverError);
+            }
+        } catch (err: any) {
+            console.error("Failed to save state to API:", err);
+            setError(`Could not save your changes: ${err.message}`);
+        }
+    };
+
+    // Debounce save to avoid excessive API calls
+    const handler = setTimeout(() => {
+        saveData();
+    }, 500);
+
+    return () => {
+        clearTimeout(handler);
+    };
+  }, [medications, history, isDataLoaded]);
 
   const requestNotificationPermission = useCallback(async () => {
     if (!('Notification' in window)) {
@@ -450,7 +497,14 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {status !== AppState.Loading && medications.length === 0 && !isAddingManually && (
+        {status !== AppState.Loading && !isDataLoaded && (
+          <div className="text-center p-8">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading your medication data...</p>
+          </div>
+        )}
+
+        {isDataLoaded && medications.length === 0 && !isAddingManually && (
             <div className="text-center py-12 px-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
                 <PillIcon className="mx-auto h-12 w-12 text-gray-400" />
                 <h3 className="mt-2 text-lg font-medium text-gray-900 dark:text-white">No medications listed</h3>

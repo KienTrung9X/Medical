@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { ParsedMedication } from '../types';
 
@@ -49,13 +48,13 @@ const schema = {
 };
 
 export const extractMedicationInfoFromImage = async (imageFile: File): Promise<ParsedMedication[]> => {
-  const API_KEY = process.env.API_KEY;
-  if (!API_KEY) {
-    throw new Error("API Key is not configured. Please ensure the API_KEY environment variable is set.");
-  }
-  const ai = new GoogleGenAI({ apiKey: API_KEY });
-
   try {
+    const API_KEY = process.env.API_KEY;
+    if (!API_KEY) {
+      throw new Error("API Key is not configured. Please ensure the API_KEY environment variable is set.");
+    }
+    const ai = new GoogleGenAI({ apiKey: API_KEY });
+
     const imagePart = await fileToGenerativePart(imageFile);
     const prompt = `You are an expert medical assistant. Analyze the provided prescription file (image or PDF). Extract the following details for each medication listed: name, dosage, quantity, and the full instructions for taking the medication. Ignore all other personal patient information and general advice ('Lời dặn'). Return the result as a valid JSON array, where each object represents one medication. Do not include any text outside of the JSON array.`;
 
@@ -92,17 +91,25 @@ export const extractMedicationInfoFromImage = async (imageFile: File): Promise<P
   } catch (error: any) {
     console.error("Error extracting medication info:", error);
     
-    // Re-throw a more user-friendly error message, preserving specific messages from our checks
-    if (error.message.includes("The model returned an empty response") ||
-        error.message.includes("The AI model returned an unexpected format") ||
-        error.message.includes("The AI model's response was not in the expected array format")) {
-        throw error;
+    // List of our custom, user-facing errors that should be displayed as-is.
+    const customErrors = [
+      "API Key is not configured",
+      "The model returned an empty response",
+      "The AI model returned an unexpected format",
+      "The AI model's response was not in the expected array format"
+    ];
+
+    if (customErrors.some(msg => error.message.includes(msg))) {
+      throw error;
     }
 
-    if (error.toString().includes('API key')) {
+    // Catch generic API key errors from the library (e.g., on initialization)
+    // and provide a standard user-friendly message.
+    if (error.toString().toLowerCase().includes('api key')) {
          throw new Error("API Key is invalid or missing. Please check your configuration.");
     }
 
+    // Generic fallback for any other type of error.
     throw new Error("Failed to analyze the prescription. The image might be unclear, or there could be an issue with the AI service.");
   }
 };
