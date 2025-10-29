@@ -2,14 +2,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { ParsedMedication } from '../types';
 
-const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-  console.warn("API_KEY environment variable not set. Gemini API calls will fail.");
-}
-
-const ai = new GoogleGenAI({ apiKey: API_KEY! });
-
 const fileToGenerativePart = (file: File) => {
   return new Promise<{ inlineData: { data: string; mimeType: string } }>((resolve, reject) => {
     const reader = new FileReader();
@@ -57,6 +49,12 @@ const schema = {
 };
 
 export const extractMedicationInfoFromImage = async (imageFile: File): Promise<ParsedMedication[]> => {
+  const API_KEY = process.env.API_KEY;
+  if (!API_KEY) {
+    throw new Error("API Key is not configured. Please ensure the API_KEY environment variable is set.");
+  }
+  const ai = new GoogleGenAI({ apiKey: API_KEY });
+
   try {
     const imagePart = await fileToGenerativePart(imageFile);
     const prompt = `You are an expert medical assistant. Analyze the provided prescription file (image or PDF). Extract the following details for each medication listed: name, dosage, quantity, and the full instructions for taking the medication. Ignore all other personal patient information and general advice ('Lời dặn'). Return the result as a valid JSON array, where each object represents one medication. Do not include any text outside of the JSON array.`;
