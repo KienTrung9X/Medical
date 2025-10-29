@@ -61,7 +61,8 @@ const App: React.FC = () => {
   const [selectedMedicationIds, setSelectedMedicationIds] = useState<string[]>([]);
   const [medsForReview, setMedsForReview] = useState<ParsedMedication[] | null>(null);
   const reminderTimeouts = useRef<Record<string, number>>({});
-  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaveable, setIsSaveable] = useState(false);
 
   // Load data from API on initial render
   useEffect(() => {
@@ -88,12 +89,13 @@ const App: React.FC = () => {
                     setHistory(parsedHistory);
                 }
             }
-            // If result.data is null, it's the first visit. No error needed.
+            // If result.data is null or loading is successful, enable saving.
+            setIsSaveable(true);
         } catch (err: any) {
             console.error("Failed to load state from API:", err);
             setError(`Could not load your saved data: ${err.message}`);
         } finally {
-            setIsDataLoaded(true);
+            setIsLoading(false);
         }
     };
     
@@ -106,8 +108,8 @@ const App: React.FC = () => {
 
   // Save state to API whenever medications or history change
   useEffect(() => {
-    // Don't save until the initial data load is complete.
-    if (!isDataLoaded) {
+    // Don't save until the initial data has been loaded successfully or user has added data.
+    if (!isSaveable) {
         return;
     }
 
@@ -147,7 +149,7 @@ const App: React.FC = () => {
     return () => {
         clearTimeout(handler);
     };
-  }, [medications, history, isDataLoaded]);
+  }, [medications, history, isSaveable]);
 
   const requestNotificationPermission = useCallback(async () => {
     if (!('Notification' in window)) {
@@ -226,6 +228,7 @@ const App: React.FC = () => {
     setMedications(prevMeds => [...prevMeds, ...newMedications]);
     setMedsForReview(null);
     setStatus(AppState.Success);
+    setIsSaveable(true);
   }, []);
 
   const handleCancelReview = useCallback(() => {
@@ -276,6 +279,7 @@ const App: React.FC = () => {
     setMedications(prevMeds => [...prevMeds, newMedication]);
     setIsAddingManually(false);
     setStatus(AppState.Success);
+    setIsSaveable(true);
   }, []);
 
   const handleSelectMedication = useCallback((id: string) => {
@@ -424,7 +428,12 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {status !== AppState.Loading && medications.length > 0 && (
+        {isLoading ? (
+          <div className="text-center p-8">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading your medication data...</p>
+          </div>
+        ) : medications.length > 0 ? (
           <div>
             <div className="flex justify-between items-center mb-6">
                 <div>
@@ -495,16 +504,7 @@ const App: React.FC = () => {
               })}
             </div>
           </div>
-        )}
-
-        {status !== AppState.Loading && !isDataLoaded && (
-          <div className="text-center p-8">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading your medication data...</p>
-          </div>
-        )}
-
-        {isDataLoaded && medications.length === 0 && !isAddingManually && (
+        ) : !isAddingManually && (
             <div className="text-center py-12 px-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
                 <PillIcon className="mx-auto h-12 w-12 text-gray-400" />
                 <h3 className="mt-2 text-lg font-medium text-gray-900 dark:text-white">No medications listed</h3>
