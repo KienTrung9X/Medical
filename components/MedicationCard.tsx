@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Medication, Reminder } from '../types';
-import { PillIcon, ClockIcon, CheckCircleIcon, BellIcon, BellIconSolid, TrashIcon, PlusCircleIcon } from './icons';
+import { PillIcon, ClockIcon, CheckCircleIcon, BellIcon, BellIconSolid, TrashIcon, PlusCircleIcon, BadgeCheckIcon } from './icons';
 
 interface MedicationCardProps {
   medication: Medication;
+  dosesTaken: number;
   onToggleTaken: (id: string) => void;
   onSetReminder: (id: string, reminder: Reminder | null) => void;
   notificationPermission: NotificationPermission;
@@ -37,6 +38,7 @@ const formatReminderText = (reminder: Reminder | null): string => {
 
 const MedicationCard: React.FC<MedicationCardProps> = ({
   medication,
+  dosesTaken,
   onToggleTaken,
   onSetReminder,
   notificationPermission,
@@ -48,6 +50,14 @@ const MedicationCard: React.FC<MedicationCardProps> = ({
   const [reminderFormState, setReminderFormState] = useState<Reminder>(
     medication.reminder || { times: ['09:00'], frequency: 'daily', days: [] }
   );
+
+  const hasQuantityTracking = typeof medication.totalQuantity === 'number' && medication.totalQuantity > 0;
+  const isCourseCompleted = hasQuantityTracking && dosesTaken >= medication.totalQuantity!;
+
+  let progressPercent = 0;
+  if (hasQuantityTracking) {
+      progressPercent = Math.min(100, (dosesTaken / medication.totalQuantity!) * 100);
+  }
 
   const handleEditClick = () => {
     setReminderFormState(medication.reminder || { times: ['09:00'], frequency: 'daily', days: [] });
@@ -108,7 +118,8 @@ const MedicationCard: React.FC<MedicationCardProps> = ({
       className={`
         bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden transition-all duration-300 relative
         ${medication.taken ? 'opacity-60 bg-green-50 dark:bg-green-900/20' : ''}
-        border-l-8 ${medication.taken ? 'border-green-400' : 'border-blue-500'}
+        ${isCourseCompleted ? 'border-l-8 border-purple-500' : 
+            medication.taken ? 'border-l-8 border-green-400' : 'border-l-8 border-blue-500'}
         ${isSelected ? 'ring-2 ring-blue-500' : ''}
       `}
     >
@@ -125,8 +136,8 @@ const MedicationCard: React.FC<MedicationCardProps> = ({
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <div className="flex items-center space-x-3">
-              <div className={`p-2 rounded-full ${medication.taken ? 'bg-green-100 dark:bg-green-900' : 'bg-blue-100 dark:bg-blue-900'}`}>
-                <PillIcon className={`w-6 h-6 ${medication.taken ? 'text-green-500' : 'text-blue-500'}`} />
+              <div className={`p-2 rounded-full ${isCourseCompleted ? 'bg-purple-100 dark:bg-purple-900' : medication.taken ? 'bg-green-100 dark:bg-green-900' : 'bg-blue-100 dark:bg-blue-900'}`}>
+                <PillIcon className={`w-6 h-6 ${isCourseCompleted ? 'text-purple-500' : medication.taken ? 'text-green-500' : 'text-blue-500'}`} />
               </div>
               <div>
                 <h3 className={`text-lg font-bold text-gray-900 dark:text-white ${medication.taken ? 'line-through' : ''}`}>
@@ -139,14 +150,17 @@ const MedicationCard: React.FC<MedicationCardProps> = ({
           <button
             onClick={() => onToggleTaken(medication.id)}
             aria-label={medication.taken ? 'Mark as not taken' : 'Mark as taken'}
+            disabled={isCourseCompleted}
             className={`
               flex items-center justify-center w-12 h-12 rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2
-              ${medication.taken 
+              ${isCourseCompleted 
+                ? 'bg-purple-500 text-white cursor-not-allowed'
+                : medication.taken 
                 ? 'bg-green-500 text-white hover:bg-green-600 focus:ring-green-500' 
                 : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-600 focus:ring-blue-500'}
             `}
           >
-            <CheckCircleIcon className="w-7 h-7" />
+            {isCourseCompleted ? <BadgeCheckIcon className="w-7 h-7" /> : <CheckCircleIcon className="w-7 h-7" />}
           </button>
         </div>
 
@@ -156,6 +170,30 @@ const MedicationCard: React.FC<MedicationCardProps> = ({
             <p className="text-gray-700 dark:text-gray-300">{medication.instructions}</p>
           </div>
         </div>
+
+        {hasQuantityTracking && (
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                {isCourseCompleted ? (
+                    <div className="flex items-center justify-center gap-2 text-purple-600 dark:text-purple-400 font-semibold bg-purple-100 dark:bg-purple-900/50 py-2 rounded-lg">
+                        <BadgeCheckIcon className="w-5 h-5" />
+                        <span>Course Completed!</span>
+                    </div>
+                ) : (
+                    <div>
+                        <div className="flex justify-between items-center mb-1">
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Progress</span>
+                            <span className="text-sm font-medium text-gray-500 dark:text-gray-400">{dosesTaken} / {medication.totalQuantity} taken</span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                            <div
+                                className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                                style={{ width: `${progressPercent}%` }}
+                            ></div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        )}
         
         <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             {isEditingReminder ? (

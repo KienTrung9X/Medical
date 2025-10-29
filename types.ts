@@ -3,6 +3,7 @@ export interface ParsedMedication {
   dosage: string;
   quantity: string;
   instructions: string;
+  totalQuantity: number | null;
 }
 
 export interface Reminder {

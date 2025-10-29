@@ -11,6 +11,7 @@ const ManualAddForm: React.FC<ManualAddFormProps> = ({ onAdd, onCancel }) => {
     const [dosage, setDosage] = useState('');
     const [quantity, setQuantity] = useState('');
     const [instructions, setInstructions] = useState('');
+    const [totalQuantity, setTotalQuantity] = useState('');
     const [error, setError] = useState('');
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -20,12 +21,19 @@ const ManualAddForm: React.FC<ManualAddFormProps> = ({ onAdd, onCancel }) => {
             return;
         }
         setError('');
-        onAdd({ name, dosage, quantity, instructions });
+        onAdd({ 
+            name, 
+            dosage, 
+            quantity, 
+            instructions,
+            totalQuantity: totalQuantity ? parseInt(totalQuantity, 10) : null
+        });
         // Clear form
         setName('');
         setDosage('');
         setQuantity('');
         setInstructions('');
+        setTotalQuantity('');
     };
 
     return (
@@ -45,7 +53,7 @@ const ManualAddForm: React.FC<ManualAddFormProps> = ({ onAdd, onCancel }) => {
                     />
                      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                         <label htmlFor="dosage" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Dosage</label>
                         <input
@@ -58,7 +66,7 @@ const ManualAddForm: React.FC<ManualAddFormProps> = ({ onAdd, onCancel }) => {
                         />
                     </div>
                     <div>
-                        <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Quantity</label>
+                        <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Quantity (Text)</label>
                         <input
                             type="text"
                             id="quantity"
@@ -66,6 +74,18 @@ const ManualAddForm: React.FC<ManualAddFormProps> = ({ onAdd, onCancel }) => {
                             onChange={(e) => setQuantity(e.target.value)}
                             className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                             placeholder="e.g., 30 Tablets"
+                        />
+                    </div>
+                    <div>
+                        <label htmlFor="totalQuantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Total Quantity (Numeric)</label>
+                        <input
+                            type="number"
+                            id="totalQuantity"
+                            value={totalQuantity}
+                            onChange={(e) => setTotalQuantity(e.target.value)}
+                            className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            placeholder="e.g., 30"
+                            min="1"
                         />
                     </div>
                 </div>

@@ -12,14 +12,24 @@ interface EditableMedication extends ParsedMedication {
     tempId: number;
 }
 
+const parseQuantity = (quantityText: string): number | null => {
+    if (!quantityText) return null;
+    const match = quantityText.match(/\d+/);
+    return match ? parseInt(match[0], 10) : null;
+};
+
 const ReviewModal: React.FC<ReviewModalProps> = ({ extractedMeds, onSave, onCancel }) => {
     const [meds, setMeds] = useState<EditableMedication[]>([]);
 
     useEffect(() => {
-        setMeds(extractedMeds.map((med, index) => ({ ...med, tempId: Date.now() + index })));
+        setMeds(extractedMeds.map((med, index) => ({ 
+            ...med, 
+            tempId: Date.now() + index,
+            totalQuantity: parseQuantity(med.quantity) 
+        })));
     }, [extractedMeds]);
 
-    const handleInputChange = (tempId: number, field: keyof ParsedMedication, value: string) => {
+    const handleInputChange = (tempId: number, field: keyof ParsedMedication, value: string | number | null) => {
         setMeds(currentMeds =>
             currentMeds.map(med =>
                 med.tempId === tempId ? { ...med, [field]: value } : med
@@ -38,6 +48,7 @@ const ReviewModal: React.FC<ReviewModalProps> = ({ extractedMeds, onSave, onCanc
             dosage: '',
             quantity: '',
             instructions: '',
+            totalQuantity: null,
         };
         setMeds(currentMeds => [...currentMeds, newMed]);
     };
@@ -103,7 +114,7 @@ const ReviewModal: React.FC<ReviewModalProps> = ({ extractedMeds, onSave, onCanc
                                         placeholder="Medication Name"
                                     />
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                     <div>
                                         <label htmlFor={`dosage-${med.tempId}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">Dosage</label>
                                         <input
@@ -116,7 +127,7 @@ const ReviewModal: React.FC<ReviewModalProps> = ({ extractedMeds, onSave, onCanc
                                         />
                                     </div>
                                     <div>
-                                        <label htmlFor={`quantity-${med.tempId}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">Quantity</label>
+                                        <label htmlFor={`quantity-${med.tempId}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">Quantity (Text)</label>
                                         <input
                                             type="text"
                                             id={`quantity-${med.tempId}`}
@@ -124,6 +135,18 @@ const ReviewModal: React.FC<ReviewModalProps> = ({ extractedMeds, onSave, onCanc
                                             onChange={(e) => handleInputChange(med.tempId, 'quantity', e.target.value)}
                                             className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                                             placeholder="e.g., 30 Tablets"
+                                        />
+                                    </div>
+                                     <div>
+                                        <label htmlFor={`totalQuantity-${med.tempId}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">Total Quantity (Numeric)</label>
+                                        <input
+                                            type="number"
+                                            id={`totalQuantity-${med.tempId}`}
+                                            value={med.totalQuantity ?? ''}
+                                            onChange={(e) => handleInputChange(med.tempId, 'totalQuantity', e.target.value ? parseInt(e.target.value, 10) : null)}
+                                            className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                            placeholder="e.g., 30"
+                                            min="1"
                                         />
                                     </div>
                                 </div>

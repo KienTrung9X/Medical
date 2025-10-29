@@ -431,17 +431,21 @@ const App: React.FC = () => {
             </div>
 
             <div className="space-y-4">
-              {medications.map(med => (
-                <MedicationCard
-                  key={med.id}
-                  medication={med}
-                  onToggleTaken={handleToggleTaken}
-                  onSetReminder={handleSetReminder}
-                  notificationPermission={notificationPermission}
-                  isSelected={selectedMedicationIds.includes(med.id)}
-                  onSelect={handleSelectMedication}
-                />
-              ))}
+              {medications.map(med => {
+                const dosesTaken = history.filter(h => h.medicationId === med.id).length;
+                return (
+                  <MedicationCard
+                    key={med.id}
+                    medication={med}
+                    dosesTaken={dosesTaken}
+                    onToggleTaken={handleToggleTaken}
+                    onSetReminder={handleSetReminder}
+                    notificationPermission={notificationPermission}
+                    isSelected={selectedMedicationIds.includes(med.id)}
+                    onSelect={handleSelectMedication}
+                  />
+                );
+              })}
             </div>
           </div>
         )}
